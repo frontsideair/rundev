@@ -1,0 +1,34 @@
+{
+  "name": "rundev",
+  "version": "0.1.0",
+  "description": "Run your development server with ease",
+  "main": "dist/rundev.js",
+  "bin": {
+    "rundev": "./dist/rundev.js"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/rundev.js",
+    "exec": "node --experimental-strip-types rundev.ts",
+    "dev": "echo \"Hello world!\""
+  },
+  "keywords": [],
+  "author": "Fatih Altinok <fatihaltinok@live.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/semver": "^7.5.8",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": "^22.11.0",
+    "pnpm": "^9.12.2"
+  },
+  "dependencies": {
+    "@parcel/watcher": "^2.5.0",
+    "semver": "^7.6.3",
+    "tar": "^7.4.3"
+  }
+}
