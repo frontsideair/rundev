@@ -17,10 +17,10 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import child_process, { spawn, type SpawnOptions } from "node:child_process";
 import { promisify } from "node:util";
+import { watchFile } from "node:fs";
 
 import * as tar from "tar";
 import semver from "semver";
-import { watch, watchFile } from "node:fs";
 
 const execFile = promisify(child_process.execFile);
 
@@ -257,7 +257,12 @@ async function main() {
 
     const registry = await getRegistry();
 
-    console.log({ nodeVersion, packageManager });
+    const packageManagerLog = packageManager
+      ? `${packageManager.name}@${packageManager.version}`
+      : "node bundled npm";
+    console.log(
+      `Using node version ${nodeVersion} and ${packageManagerLog} as package manager.`
+    );
 
     const nodePath = await ensureNodeVersion(nodeVersion, registry);
     const packageManagerPath = await ensurePackageManager(
@@ -266,28 +271,29 @@ async function main() {
       nodeVersion
     );
 
-    console.log({ nodePath, packageManagerPath });
-
     await installDependencies(
       packageManager?.installCommand,
       nodePath,
       packageManagerPath
     );
+
     let devServer = runDevServer(nodePath, packageManagerPath);
 
     watchFile(
       path.join(projectRoot, packageManager?.lockfile ?? "package-lock.json"),
-      async () => {
-        devServer.kill();
-        console.log(
-          `Lockfile changed, reinstalling dependencies and restarting the dev server...`
-        );
-        await installDependencies(
-          packageManager?.installCommand,
-          nodePath,
-          packageManagerPath
-        );
-        devServer = runDevServer(nodePath, packageManagerPath);
+      async (current, previous) => {
+        if (current.size !== previous.size) {
+          devServer.kill();
+          console.log(
+            `Lockfile changed, reinstalling dependencies and restarting the dev server...`
+          );
+          await installDependencies(
+            packageManager?.installCommand,
+            nodePath,
+            packageManagerPath
+          );
+          devServer = runDevServer(nodePath, packageManagerPath);
+        }
       }
     );
   }

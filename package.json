@@ -9,10 +9,10 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/rundev.js",
+    "typecheck": "tsc --noEmit",
     "exec": "node --experimental-strip-types rundev.ts",
-    "dev": "echo \"Hello world!\""
+    "compile": "deno compile -A --no-check -o dist/rundev rundev.ts",
+    "deploy": "cp dist/rundev ~/.bin/"
   },
   "keywords": [],
   "author": "Fatih Altinok <fatihaltinok@live.com>",
@@ -27,7 +27,6 @@
     "pnpm": "^9.12.2"
   },
   "dependencies": {
-    "@parcel/watcher": "^2.5.0",
     "semver": "^7.6.3",
     "tar": "^7.4.3"
   }
