@@ -15,14 +15,11 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import child_process, { spawn, type SpawnOptions } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn, type SpawnOptions } from "node:child_process";
 import { watchFile } from "node:fs";
 
 import * as tar from "tar";
 import semver from "semver";
-
-const execFile = promisify(child_process.execFile);
 
 async function findNearestPackageJson() {
   let currentDir = process.cwd();
@@ -54,52 +51,51 @@ type PackageManagerSpec = {
   installCommand: string;
 };
 
-function generateSpec(
-  partialSpec: Omit<PackageManagerSpec, "version">,
-  version: string
-) {
+function determinePackageManager({
+  packageManager,
+  engines,
+}: any): PackageManagerSpec | undefined {
+  const [name, version] =
+    packageManager?.split("@") ??
+    (engines.npm
+      ? ["npm", engines.npm]
+      : engines.yarn
+      ? ["yarn", engines.yarn]
+      : engines.pnpm
+      ? ["pnpm", engines.pnpm]
+      : []);
   const minVersion = semver.minVersion(version);
-  if (minVersion) {
-    return {
-      ...partialSpec,
-      version: minVersion.version,
-    };
-  }
-}
 
-function determinePackageManager(
-  engines: Record<string, string>
-): PackageManagerSpec | undefined {
-  if (engines?.npm) {
-    return generateSpec(
-      {
-        name: "npm",
-        executableName: "npm",
-        lockfile: "package-lock.json",
-        installCommand: "install",
-      },
-      engines.npm
-    );
-  } else if (engines?.yarn) {
-    return generateSpec(
-      {
-        name: "yarn",
-        executableName: "yarn",
-        lockfile: "yarn.lock",
-        installCommand: "install",
-      },
-      engines.yarn
-    );
-  } else if (engines?.pnpm) {
-    return generateSpec(
-      {
-        name: "pnpm",
-        executableName: "pnpm.cjs",
-        lockfile: "pnpm-lock.yaml",
-        installCommand: "install",
-      },
-      engines.pnpm
-    );
+  if (name && minVersion) {
+    switch (name) {
+      case "npm": {
+        return {
+          name: "npm",
+          executableName: "npm",
+          lockfile: "package-lock.json",
+          version: minVersion.version,
+          installCommand: "install",
+        };
+      }
+      case "yarn": {
+        return {
+          name: "yarn",
+          executableName: "yarn",
+          lockfile: "yarn.lock",
+          version: minVersion.version,
+          installCommand: "install",
+        };
+      }
+      case "pnpm": {
+        return {
+          name: "pnpm",
+          executableName: "pnpm.cjs",
+          lockfile: "pnpm-lock.yaml",
+          version: minVersion.version,
+          installCommand: "install",
+        };
+      }
+    }
   }
 }
 
@@ -252,8 +248,8 @@ async function main() {
   } else {
     const { packageJson, projectRoot } = result;
     const nodeVersion =
-      semver.minVersion(packageJson.engines?.node)?.version ?? NODE_LTS;
-    const packageManager = determinePackageManager(packageJson.engines);
+      semver.minVersion(packageJson?.engines?.node)?.version ?? NODE_LTS;
+    const packageManager = determinePackageManager(packageJson);
 
     const registry = await getRegistry();
 
