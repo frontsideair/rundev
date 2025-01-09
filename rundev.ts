@@ -1,103 +1,30 @@
-#! /usr/bin/env node
-
-/**
- * Read nearest package.json file
- * Determine node version
- * Determine package manager and version
- * Install those if not installed
- * Daemonize the following, restart if package.json or lockfile has changed
- ** Install packages with package manager
- ** Run dev command with given node version
- */
-
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { spawn, type SpawnOptions } from "node:child_process";
-import { watchFile } from "node:fs";
+import type { SemVer } from "semver";
 
 import * as tar from "tar";
-import semver from "semver";
 
-async function findNearestPackageJson() {
-  let currentDir = process.cwd();
+export type PackageManager = "npm" | "yarn" | "pnpm";
 
-  while (true) {
-    try {
-      const packageJson = await fs.readFile(
-        path.join(currentDir, "package.json"),
-        { encoding: "utf-8" }
-      );
-      return { projectRoot: currentDir, packageJson: JSON.parse(packageJson) };
-    } catch (error) {
-      const parentDir = path.dirname(currentDir);
-      if (currentDir === parentDir) {
-        break;
-      }
-      currentDir = parentDir;
-    }
-  }
-}
-
-type PackageManager = "npm" | "yarn" | "pnpm";
-
-type PackageManagerSpec = {
-  name: PackageManager;
-  version: string;
+export type PackageManagerSpec = {
   executableName: string;
   lockfile: string;
   installCommand: string;
 };
 
-function determinePackageManager({
-  packageManager,
-  engines,
-}: any): PackageManagerSpec | undefined {
-  const [name, version] =
-    packageManager?.split("@") ??
-    (engines.npm
-      ? ["npm", engines.npm]
-      : engines.yarn
-      ? ["yarn", engines.yarn]
-      : engines.pnpm
-      ? ["pnpm", engines.pnpm]
-      : []);
-  const minVersion = semver.minVersion(version);
-
-  if (name && minVersion) {
-    switch (name) {
-      case "npm": {
-        return {
-          name: "npm",
-          executableName: "npm",
-          lockfile: "package-lock.json",
-          version: minVersion.version,
-          installCommand: "install",
-        };
-      }
-      case "yarn": {
-        return {
-          name: "yarn",
-          executableName: "yarn",
-          lockfile: "yarn.lock",
-          version: minVersion.version,
-          installCommand: "install",
-        };
-      }
-      case "pnpm": {
-        return {
-          name: "pnpm",
-          executableName: "pnpm.cjs",
-          lockfile: "pnpm-lock.yaml",
-          version: minVersion.version,
-          installCommand: "install",
-        };
-      }
+export type PackageManagerResult =
+  | {
+      type: "packageManager" | "engines";
+      name: PackageManager;
+      version: SemVer["version"];
     }
-  }
-}
+  | {
+      type: "bundled";
+      name: "npm";
+    };
 
 const STORE_PATH = path.join(os.homedir(), ".rundev");
 const REGISTRY_PATH = path.join(STORE_PATH, "registry.json");
@@ -118,7 +45,7 @@ const DEFAULT_REGISTRY: string = JSON.stringify({
   },
 });
 
-async function getRegistry(): Promise<Registry> {
+export async function getRegistry(): Promise<Registry> {
   return JSON.parse(
     await fs
       .readFile(REGISTRY_PATH, { encoding: "utf-8" })
@@ -126,7 +53,7 @@ async function getRegistry(): Promise<Registry> {
   );
 }
 
-async function ensureNodeVersion(version: string, registry: Registry) {
+export async function ensureNodeVersion(version: string, registry: Registry) {
   if (!registry.nodeVersions.includes(version)) {
     await installNodeVersion(version, registry);
   }
@@ -146,13 +73,14 @@ async function installNodeVersion(version: string, registry: Registry) {
   console.log(`Node version ${version} installed successfully.`);
 }
 
-async function ensurePackageManager(
-  packageManager: PackageManagerSpec | undefined,
+export async function ensurePackageManager(
+  packageManagerSpec: PackageManagerSpec,
+  packageManager: PackageManagerResult,
   registry: Registry,
   nodeVersion: string
 ) {
-  if (packageManager) {
-    const { name, version, executableName } = packageManager;
+  if (packageManager.type !== "bundled") {
+    const { name, version } = packageManager;
     if (!registry.packageManagers[name]?.includes(version)) {
       await installPackageManager(name, version, registry);
     }
@@ -161,7 +89,7 @@ async function ensurePackageManager(
       name,
       version,
       "bin",
-      executableName
+      packageManagerSpec.executableName
     );
   } else {
     return path.join(NODE_VERSIONS_PATH, nodeVersion, "bin", "npm");
@@ -204,95 +132,3 @@ async function install(url: string, pathToSave: string) {
     console.error(error);
   }
 }
-
-async function spawnAsync(
-  command: string,
-  args: string[],
-  options: SpawnOptions
-) {
-  const child = spawn(command, args, options);
-  return new Promise((resolve, reject) => {
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve(undefined);
-      } else {
-        reject(new Error(`Failed to run ${command} with code ${code}`));
-      }
-    });
-  });
-}
-
-async function installDependencies(
-  installCommand = "install",
-  nodePath: string,
-  packageManagerPath: string
-) {
-  return await spawnAsync(nodePath, [packageManagerPath, installCommand], {
-    stdio: "inherit",
-  });
-}
-
-function runDevServer(nodePath: string, packageManagerPath: string) {
-  return spawn(nodePath, [packageManagerPath, "run", "dev"], {
-    stdio: "inherit",
-  });
-}
-
-const NODE_LTS = "22.12.0";
-
-async function main() {
-  const result = await findNearestPackageJson();
-
-  if (!result) {
-    console.log("Could not find package.json in any parent directory.");
-  } else {
-    const { packageJson, projectRoot } = result;
-    const nodeVersion =
-      semver.minVersion(packageJson?.engines?.node)?.version ?? NODE_LTS;
-    const packageManager = determinePackageManager(packageJson);
-
-    const registry = await getRegistry();
-
-    const packageManagerLog = packageManager
-      ? `${packageManager.name}@${packageManager.version}`
-      : "node bundled npm";
-    console.log(
-      `Using node version ${nodeVersion} and ${packageManagerLog} as package manager.`
-    );
-
-    const nodePath = await ensureNodeVersion(nodeVersion, registry);
-    const packageManagerPath = await ensurePackageManager(
-      packageManager,
-      registry,
-      nodeVersion
-    );
-
-    await installDependencies(
-      packageManager?.installCommand,
-      nodePath,
-      packageManagerPath
-    );
-
-    let devServer = runDevServer(nodePath, packageManagerPath);
-
-    watchFile(
-      path.join(projectRoot, packageManager?.lockfile ?? "package-lock.json"),
-      async (current, previous) => {
-        if (current.size !== previous.size) {
-          devServer.kill();
-          console.log(
-            `Lockfile changed, reinstalling dependencies and restarting the dev server...`
-          );
-          await installDependencies(
-            packageManager?.installCommand,
-            nodePath,
-            packageManagerPath
-          );
-          devServer = runDevServer(nodePath, packageManagerPath);
-        }
-      }
-    );
-  }
-}
-
-await main();

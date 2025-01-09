@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "exec": "node --experimental-strip-types rundev.ts",
     "compile": "deno compile -A --no-check -o dist/rundev rundev.ts",
-    "deploy": "cp dist/rundev ~/.bin/"
+    "deploy": "cp dist/rundev ~/.bin/",
+    "dev": "echo 'hello world'"
   },
   "keywords": [],
   "author": "Fatih Altinok <fatihaltinok@live.com>",
@@ -27,7 +28,9 @@
     "pnpm": "^9.12.2"
   },
   "dependencies": {
+    "rxjs": "^7.8.1",
     "semver": "^7.6.3",
-    "tar": "^7.4.3"
+    "tar": "^7.4.3",
+    "zod": "^3.24.1"
   }
 }
